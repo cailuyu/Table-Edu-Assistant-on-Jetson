@@ -133,6 +133,8 @@ def image_ORC(image):
     else:
         print(f"Error: {response.status_code}, {response.text}")
 
+def ASR(input_audio, message):
+    return message
 
 
 def chat_with_image(image, orc, prompt, chat_history):
@@ -319,9 +321,23 @@ with gr.Blocks() as demo:
 
     im = gr.Image(type="pil",label="Chat Image",interactive=False)
     image_ocr = gr.Textbox(label="OCR reuslt:", value="")
-    message = gr.Textbox(label="Your message:", value="解答图中的问题，用中文回答")
+    
+    input_audio = gr.Audio(
+        label="Input Audio",
+        sources=["microphone"],
+        type="numpy",
+        streaming=False,
+        waveform_options=gr.WaveformOptions(waveform_color="#B83A4B"),
+        )
+
+    process_audio
+
+    message = gr.Textbox(label="Your message:", value="")
     # 裁剪按钮
     
+
+    input_audio.stop_recording(ASR, input_audio, message)
+
     chat_image_button = gr.Button("Send with Image")
     keep_chat_button = gr.Button("Keep Chat")
 
