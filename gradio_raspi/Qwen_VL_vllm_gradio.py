@@ -12,8 +12,15 @@ import gradio as gr
 import cv2
 import numpy as np
 
-orc_model_name= "Qwen/Qwen2-VL-7B-Instruct"
-model_name = "getfit/DeepSeek-R1-Distill-Qwen-32B-FP8-Dynamic"
+ocr_model_name= "Qwen/Qwen2-VL-7B-Instruct"
+ocr_host = "192.168.31.10:8000"
+
+asr_model_name = "Qwen/Qwen2-Audio-7B-Instruct"
+asr_host = "192.168.31.10:8000"
+
+chat_model_name = "getfit/DeepSeek-R1-Distill-Qwen-32B-FP8-Dynamic"
+chat_host = "192.168.31.120:8000"
+
 pipe = "libcamerasrc ! video/x-raw,width=1920,height=1080,framerate=30/1 ! appsink"
 cap = cv2.VideoCapture(pipe)
 fps = cap.get(cv2.CAP_PROP_FPS)
@@ -78,7 +85,7 @@ def image_ORC(image):
     # print(chat_history_display)
     # print(image)
     image_data = None
-    url = "http://192.168.31.10:8000/v1/chat/completions"
+    url = "http://"+ocr_host+"/v1/chat/completions"
     
     system = {
                 "role": "system",
@@ -104,7 +111,7 @@ def image_ORC(image):
         return
 
     data = {
-    "model": orc_model_name,
+    "model": ocr_model_name,
     "messages":[system]+[user],
     "temperature":0,  # 控制生成的随机性
     "max_tokens":2000,   # 控制生成文本的长度
@@ -133,8 +140,61 @@ def image_ORC(image):
     else:
         print(f"Error: {response.status_code}, {response.text}")
 
-def ASR(input_audio, message):
-    return message
+def ASR(audio):
+    audio_data = None
+    url = "http://"+asr_host+"/v1/chat/completions"
+    
+    system = {
+                "role": "system",
+                "content": [
+                    {"type": "text", "text": "As an ASR service, generate caption of audio with the audio language."},
+                ],
+            }
+
+    if audio:
+        audio_data = encode_audio(audio)
+        user = {
+            "role": "user",
+            "content": [
+                {
+                    "type": "audio_url",
+                    "image_url": {"url": "data:audio/ogg;base64," + audio_data},
+                },
+            ],
+        }
+        
+    else:
+        return
+
+    data = {
+    "model": asr_model_name,
+    "messages":[system]+[user],
+    "temperature":0,  # 控制生成的随机性
+    "max_tokens":2000,   # 控制生成文本的长度
+    "stream":True
+    }        
+
+    response = requests.post(url, json=data, stream=True)
+
+    if response.status_code == 200:
+        content=""
+        print("Streaming response:")
+        # 按行读取流式响应
+        for chunk in response.iter_lines(decode_unicode=True):
+            if chunk:  # 跳过空行
+                if "data: [DONE]" == chunk:
+                    print("\nDone!")
+                else:
+                    delta_data = json.loads(chunk[len("data: "):])
+                    if "stop" != delta_data.get("finish_reason"):
+                        delta = delta_data.get("choices")[0].get("delta").get("content")
+                        if delta=="":
+                            continue
+                        # print(assistant)
+                        content = content + delta
+                        yield content
+    else:
+        print(f"Error: {response.status_code}, {response.text}")
 
 
 def chat_with_image(image, orc, prompt, chat_history):
@@ -142,7 +202,7 @@ def chat_with_image(image, orc, prompt, chat_history):
     # print(chat_history_display)
     # print(image)
     image_data = None
-    url = "http://192.168.31.120:8000/v1/chat/completions"
+    url = "http://"+chat_host+"/v1/chat/completions"
     
     system = {
                 "role": "system",
@@ -174,7 +234,7 @@ def chat_with_image(image, orc, prompt, chat_history):
 
     if chat_history!=[]:
         data = {
-        "model": model_name,
+        "model": chat_model_name,
         "messages":[system]+chat_history+[user],
         "temperature":0,  # 控制生成的随机性
         "max_tokens":2000,   # 控制生成文本的长度
@@ -182,7 +242,7 @@ def chat_with_image(image, orc, prompt, chat_history):
         }
     else:
         data = {
-        "model": model_name,
+        "model": chat_model_name,
         "messages":[system]+[user],
         "temperature":0,  # 控制生成的随机性
         "max_tokens":2000,   # 控制生成文本的长度
@@ -236,6 +296,15 @@ def encode_image(image):
         # 二进制图片文件转base64编码
     image_data = base64.b64encode(binary_data).decode("utf-8")
     return image_data
+
+def encode_audio(audio):
+    buffer = BytesIO()
+    audio.save(buffer, format="WAV")  # 根据图片格式选择适当的格式，如 PNG、JPEG
+    binary_data = buffer.getvalue()  # 获取二进制数据
+    buffer.close()
+        # 二进制图片文件转base64编码
+    audio_data = base64.b64encode(binary_data).decode("utf-8")
+    return audio_data
 
 def decode_image(base64_str):
     # 去除可能存在的前缀
